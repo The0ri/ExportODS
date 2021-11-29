@@ -1,0 +1,131 @@
+/*******************************************************************************
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ *******************************************************************************/
+package com.nereide.webapp;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.StringWriter;
+import java.io.Writer;
+import java.util.Locale;
+import java.util.TimeZone;
+
+import javax.servlet.ServletContext;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.apache.ofbiz.base.util.UtilCodec;
+import org.apache.ofbiz.base.util.UtilHttp;
+import org.apache.ofbiz.base.util.UtilObject;
+import org.apache.ofbiz.base.util.UtilValidate;
+import org.apache.ofbiz.base.util.collections.MapStack;
+import org.apache.ofbiz.webapp.view.AbstractViewHandler;
+import org.apache.ofbiz.webapp.view.ViewHandlerException;
+import org.apache.ofbiz.widget.model.ModelTheme;
+import org.apache.ofbiz.widget.model.ScreenFactory;
+import org.apache.ofbiz.widget.renderer.FormStringRenderer;
+import org.apache.ofbiz.widget.renderer.ScreenRenderer;
+import org.apache.ofbiz.widget.renderer.ScreenStringRenderer;
+import org.apache.ofbiz.widget.renderer.VisualTheme;
+import org.apache.ofbiz.widget.renderer.macro.MacroFormRenderer;
+import org.apache.ofbiz.widget.renderer.macro.MacroScreenRenderer;
+import org.odftoolkit.simple.SpreadsheetDocument;
+import com.nereide.utils.OdsUtil;
+
+
+public class ExportOdsViewHandler extends AbstractViewHandler {
+
+	public static final String module = ExportOdsViewHandler.class.getName();
+
+	protected ServletContext servletContext = null;
+
+	/*
+ 	* (non-Javadoc)
+ 	*
+ 	* @see org.apache.ofbiz.webapp.view.ViewHandler#init(javax.servlet.ServletContext)
+ 	*/
+	public void init(ServletContext context) throws ViewHandlerException {
+    	this.servletContext = context;
+	}
+
+	/*
+ 	* (non-Javadoc)
+ 	*
+ 	* @see org.apache.ofbiz.webapp.view.ViewHandler#render(java.lang.String,
+ 	* java.lang.String, java.lang.String, java.lang.String, java.lang.String,
+ 	* javax.servlet.http.HttpServletRequest,
+ 	* javax.servlet.http.HttpServletResponse)
+ 	*/
+	public void render(String name, String page, String info, String contentType, String encoding, HttpServletRequest request, HttpServletResponse response) throws ViewHandlerException {
+    	VisualTheme visualTheme = UtilHttp.getVisualTheme(request);
+    	ModelTheme modelTheme = visualTheme.getModelTheme();
+    	String templateName = "screenxls";
+
+    	// render and obtain the xls or XLSX
+    	try {
+        	SpreadsheetDocument document = (SpreadsheetDocument)request.getAttribute("document");
+        	if (UtilValidate.isEmpty(document)) {
+
+            	Writer writer = new StringWriter();
+            	//Generate screen from ftl template
+            	try {
+                	// render and obtain the workbook
+
+                	MapStack<String> context = MapStack.create();
+                	ScreenRenderer.populateContextForRequest(context, null, request, response, servletContext);
+
+                	ScreenStringRenderer screenStringRenderer = new MacroScreenRenderer(modelTheme.getType(templateName), modelTheme.getScreenRendererLocation(templateName));
+                	FormStringRenderer formStringRenderer = new MacroFormRenderer(modelTheme.getFormRendererLocation(templateName), request, response);
+                	ScreenRenderer screens = new ScreenRenderer(writer, null, screenStringRenderer);
+                	screens.populateContextForRequest(request, response, servletContext);
+                	// this is the object used to render forms from their definitions
+                	screens.getContext().put("formStringRenderer", formStringRenderer);
+                	screens.getContext().put("simpleEncoder", UtilCodec.getEncoder(modelTheme.getEncoder(templateName)));
+
+                	String resourceName = ScreenFactory.getResourceNameFromCombined(page);
+                	String screenName = ScreenFactory.getScreenNameFromCombined(page);
+                	screens.render(resourceName, screenName);
+            	} catch (Exception e) {
+                	throw new ViewHandlerException("Error in the response writer/output stream: " + e.toString(), e);
+            	}
+
+            	InputStream inputStream = response.getInputStream();
+            	Locale locale = UtilHttp.getLocale(request);
+            	TimeZone tz = UtilHttp.getTimeZone(request);
+            	document = OdsUtil.convertHtmlScreenToSpreadsheet(writer.toString(), locale, tz);
+        	}
+
+        	// set the content type
+        	if (UtilValidate.isEmpty(contentType)) {
+            	contentType = modelTheme.getContentType(templateName);
+        	}
+        	response.setContentType(contentType);
+        	OutputStream outputStream = response.getOutputStream();
+        	document.save(outputStream);
+
+        	outputStream.flush();
+    	} catch (IOException e) {
+        	throw new ViewHandlerException("Error in the response writer/output stream: " + e.toString(), e);
+   	 } catch (Exception e) {
+   		 // TODO Auto-generated catch block
+   		 e.printStackTrace();
+   	 }
+	}
+}
