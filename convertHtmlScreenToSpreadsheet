@@ -1,0 +1,249 @@
+package org.apache.ofbiz.base.start;
+
+import java.sql.Timestamp;
+import java.text.DecimalFormat;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Map;
+import org.apache.ofbiz.base.util.ObjectType;
+import org.apache.ofbiz.base.util.Debug;
+import org.apache.ofbiz.base.util.UtilDateTime;
+import org.apache.ofbiz.base.util.UtilValidate;
+import org.apache.poi.ss.usermodel.CellType;
+
+import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.TimeZone;
+import java.util.Calendar;
+
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import org.odftoolkit.simple.SpreadsheetDocument;
+import org.odftoolkit.simple.table.Table;
+import org.odftoolkit.simple.table.Cell;
+import org.odftoolkit.simple.table.Row;
+
+
+public class OdsUtil {
+
+	public static final String module = OdsUtil.class.getName();
+	public static final List<String> supportedTypes = Arrays.asList("nf", "nb", "cf", "tf", "dt", "dtf");
+    
+    
+	/**
+ 	* Returns true if cell is empty
+ 	*/
+	public static boolean isEmptyCell(Cell xlsCell) {
+    	return (xlsCell == null || CellType.BLANK.equals(xlsCell.getValueType()));
+	}
+
+	/**
+ 	* Returns true if line is empty/contains empty cells only
+ 	*/
+	public static boolean isEmptyRow(Row xlsRow) {
+    	return isEmptyRow(xlsRow, null);
+	}
+	public static boolean isEmptyRow(Row xlsRow, Integer max) {
+    	if (xlsRow != null) {
+        	int cellNumber = xlsRow.getCellCount();
+        	if (max != null && max < cellNumber) {
+            	cellNumber = max;
+        	}
+        	int j = 1;
+        	for (int i = 0; i < cellNumber; i++) {
+            	if (!isEmptyCell(xlsRow.getCellByIndex(i+j))) {
+                	return false;
+            	}
+        	}
+    	}
+    	return true;
+	}
+	/**
+ 	* Returns this method return the string or null
+ 	*/
+	public static BigDecimal getCellBigDecimalValue(Row xlsRow, int cell) throws Exception {
+    	BigDecimal returnValue;
+
+    	if (CellType.STRING.equals(xlsRow.getCellByIndex(cell).getValueType())) {
+        	returnValue = new BigDecimal(xlsRow.getCellByIndex(cell).getStringValue().replace(",","."));
+    	} else {
+        	Double cellValue = xlsRow.getCellByIndex(cell).getDoubleValue();
+        	returnValue = BigDecimal.valueOf(cellValue);
+    	}
+
+    	return returnValue;
+	}
+
+	/**
+ 	* Returns this method return the Double or null
+ 	*/
+	public static Double getCellDoubleValue(Row xlsRow, int cell) throws Exception {
+    	Double returnValue;
+
+    	if (CellType.STRING.equals(xlsRow.getCellByIndex(cell).getValueType())) {
+        	returnValue = new Double(xlsRow.getCellByIndex(cell).getStringValue().replace(",","."));
+    	} else {
+        	returnValue = xlsRow.getCellByIndex(cell).getDoubleValue();
+    	}
+    	return returnValue;
+	}
+
+	/**
+ 	* Returns this method return the string or null
+ 	*/
+	public static String getCellStringValue(Row xlsRow, int cell) throws Exception {
+    	String returnValue;
+
+    	if (CellType.STRING.equals(xlsRow.getCellByIndex(cell).getValueType())) {
+        	returnValue = replaceSpace(xlsRow.getCellByIndex(cell).getStringValue());
+    	} else {
+        	Double cellValue = xlsRow.getCellByIndex(cell).getDoubleValue();
+        	returnValue =  new DecimalFormat("0").format(cellValue);
+    	}
+
+    	return returnValue;
+	}
+
+	/**
+ 	* Returns this method return the date or null
+ 	*/
+	public static Date getCellDateValue(Row xlsRow, int cell, TimeZone tz, Locale locale) throws Exception {
+    	return getCellDateValue(xlsRow, cell, tz, locale, "dd/MM/yyyy");
+	}
+	/**
+ 	* Returns this method return the date or null
+ 	*/
+	public static Date getCellDateValue(Row xlsRow, int cell, TimeZone tz, Locale locale, String dateTimeFormat) throws Exception {
+
+    	Date returnDate = null;
+    	String returnDateStr = null;
+    	// Parsing du champ "Start date"
+    	if (CellType.STRING.equals(xlsRow.getCellByIndex(cell).getValueType())) {
+        	returnDateStr = xlsRow.getCellByIndex(cell).getStringValue();
+
+        	if (UtilValidate.isNotEmpty(returnDateStr)) {
+            	returnDate = UtilDateTime.stringToTimeStamp(returnDateStr, dateTimeFormat, tz, locale);
+        	}
+    	} else if (CellType.NUMERIC.equals(xlsRow.getCellByIndex(cell).getValueType())) {
+        	returnDate = xlsRow.getCellByIndex(cell).getDateValue().getTime();
+    	}
+    	return returnDate;
+	}
+    
+	public static void addLineToOdsx(Table table, List<Object> cellValues) {
+   	 addLineToOdsx(table, cellValues, null, null);
+	}
+    
+	public static void addLineToOdsx(Table table, List<Object> cellValues, List<String> cellFormat, Map<String, Cell> styleLinkToFormat) {
+    	boolean useFormat = cellFormat != null && cellFormat.size() == cellValues.size();
+    	int lastRowNum = table.getRowCount();
+    	Row row = table.getRowByIndex(lastRowNum);
+    	Debug.logInfo("lastRowNum : "+ lastRowNum + " RowCount :"+ table.getRowCount(),module);
+    	int i = 0;
+    	for (Object cellValue : cellValues) {
+        	if (cellValue instanceof String) row.getCellByIndex(i).setStringValue((String) cellValue);
+        	else if (cellValue instanceof Double || cellValue instanceof BigDecimal) {
+       		 Cell cell = row.getCellByIndex(i);
+            	cell.setDoubleValue(cellValue instanceof BigDecimal ? ((BigDecimal) cellValue).doubleValue(): (double) cellValue);
+        	}
+        	else if (cellValue instanceof Integer) row.getCellByIndex(i).setDoubleValue((double) cellValue);
+        	else if (cellValue instanceof Date) {
+            	Cell cell = row.getCellByIndex(i);
+            	cell.setDateValue((Calendar) cellValue);
+        	}
+        	i++;
+    	}
+	}
+    
+	public static SpreadsheetDocument convertHtmlScreenToSpreadsheet(String html, Locale locale, TimeZone timeZone) throws Exception {
+   	 SpreadsheetDocument document = SpreadsheetDocument.newSpreadsheetDocument();
+   	 document.removeSheet(0);
+    	Debug.logVerbose("Start of screen to workbook conversion", module);
+    	Document doc = Jsoup.parse(html);
+    	//initialisation des styles par default
+    	Map<String, Cell> styleLinkToFormat = new HashMap<>();
+    	doc.getElementsByTag("table").forEach(table -> {
+        	Elements lines = table.getElementsByTag("tr");
+        	if (! lines.isEmpty()) {
+            	Table odftable = Table.newTable(document);
+            	odftable.removeRowsByIndex(0, 2);
+            	for (Element line : lines) {
+                	LinkedList<Object> lineArray = new LinkedList<>();
+                	LinkedList<String> lineCellFormat = new LinkedList<>();
+
+                	String elementTag = UtilValidate.isNotEmpty(line.getElementsByTag("th")) ?
+                        	"th" : "td";
+                	Elements cells = line.getElementsByTag(elementTag);
+                	for (Element cell : cells) {
+                    	Object cellObject;
+                    	String cellValue = cell.text();
+                    	String cellType = "String";
+                    	String cellFormat = null;
+                    	try {
+                        	if (UtilValidate.isNotEmpty(cellValue)) {
+                            	// Format iso a Simple.xls.ftl
+                            	for (String classUnit : cell.className().split(" ")) {
+                                	if (!supportedTypes.contains(classUnit)) {
+                                    	continue;
+                                	}
+                                	cellFormat = null;
+
+                                	switch (classUnit) {
+                                    	case "nf"://Accounting Number (number with decimals format "0.00")
+                                        	cellType = "Double";
+                                        	cellFormat = cell.attributes().get("data-number-format");
+                                        	break;
+                                    	case "nb":// Number (number format "0")
+                                        	cellType = "Integer";
+                                        	break;
+                                    	case "cf":// TODO: Currency (currency format "\#\#0.00")
+                                        	cellType = "String";
+                                        	cellFormat = cell.attributes().get("data-number-format");
+                                        	break;
+                                    	case "tf":// TODO: Time (time format "HH:mm:ss")
+                                        	cellType = "String";
+                                        	break;
+                                    	case "dt"://Date (date format "yyyy-MM-dd")
+                                        	cellType = "Date";
+                                        	cellFormat = cell.attributes().get("data-date-format");
+                                        	if (cellFormat.isEmpty()) cellFormat = UtilDateTime.getDateFormat();
+                                        	break;
+                                    	case "dtf"://Timestamp (date-time format "yyyy-MM-dd HH:mm:ss")
+                                        	// Hacks from DateTimeConverters.java
+                                        	if (cellValue.length() > 0 && ! cellValue.contains(":00.0")) {
+                                            	cellValue = cellValue + ":00.0";
+                                        	}
+                                        	Timestamp valueTs = (Timestamp) ObjectType.simpleTypeConvert(cellValue, "Timestamp", UtilDateTime.getDateTimeFormat(), locale);
+                                        	cellFormat = UtilDateTime.getDateFormat();
+                                        	cellValue = UtilDateTime.timeStampToString(valueTs, cellFormat, timeZone, locale);
+                                        	cellType = "Date";
+                                        	break;
+                                	}
+                                	}
+                        	}
+                        	cellObject = ObjectType.simpleTypeConvert(cellValue, cellType, null, locale);
+                    	} catch (Exception e) {
+                        	cellObject = String.valueOf(cellValue);
+                    	}
+                    	lineCellFormat.addLast(cellFormat);
+                    	lineArray.addLast(cellObject);
+                	}
+                	OdsUtil.addLineToOdsx(odftable, lineArray, lineCellFormat, styleLinkToFormat);
+            	}
+        	}
+    	});
+    	Debug.logVerbose("End of screen to workbook conversion", module);
+    	return document;
+	}
+    
+
+	public static String replaceSpace(String s) {
+    	return s == null ? s : s.replaceAll("\u00A0", " ");
+	}
+    
+}
